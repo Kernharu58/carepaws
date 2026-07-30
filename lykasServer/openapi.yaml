@@ -1,0 +1,758 @@
+openapi: 3.1.0
+info:
+  title: CarePaws API
+  version: 1.0.0-in-progress
+  description: >
+    Pet shelter adoption and welfare management platform. This spec covers
+    only the domains implemented so far (Foundation + Identity & Access +
+    Pet & Shelter Operations); it grows one PR at a time as each domain in
+    §5.3 lands — see the per-slice manifest for what's currently covered.
+servers:
+  - url: http://localhost:5000
+    description: Local development
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    User:
+      type: object
+      properties:
+        _id: { type: string }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [user, staff, admin, super_admin] }
+        status: { type: string, enum: [active, suspended, locked] }
+        emailVerified: { type: boolean }
+        identityVerificationStatus:
+          type: string
+          enum: [unverified, pending, verified, rejected]
+        createdAt: { type: string, format: date-time }
+    AuthTokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+    Pagination:
+      type: object
+      properties:
+        total: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+        pages: { type: integer }
+    Pet:
+      type: object
+      properties:
+        _id: { type: string }
+        name: { type: string }
+        species: { type: string, enum: [Dog, Cat, Other] }
+        breed: { type: string }
+        age: { type: number }
+        gender: { type: string, enum: [Male, Female] }
+        size: { type: string, enum: [Small, Medium, Large] }
+        temperament:
+          type: string
+          enum: [Calm, Playful, Shy, Energetic, Affectionate, Independent]
+        energyLevel: { type: string, enum: [Low, Medium, High] }
+        description: { type: string }
+        imageUrl: { type: string }
+        status: { type: string, enum: [Available, Pending, Adopted, Foster] }
+        owner: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+  responses:
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Not authenticated
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not permitted
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/auth/register:
+    post:
+      security: []
+      summary: Create a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName, email, password]
+              properties:
+                displayName: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+
+  /api/auth/login:
+    post:
+      security: []
+      summary: Log in with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    allOf:
+                      - $ref: "#/components/schemas/AuthTokens"
+                      - type: object
+                        properties:
+                          user: { $ref: "#/components/schemas/User" }
+        "401": { description: Invalid credentials }
+        "423": { description: Account locked (5 consecutive failed attempts) }
+
+  /api/auth/google:
+    post:
+      security: []
+      summary: Log in / sign up via Google ID token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken: { type: string }
+      responses:
+        "200": { description: Authenticated }
+        "401": { description: Invalid Google credential }
+
+  /api/auth/verify-email:
+    post:
+      security: []
+      summary: Verify an email address with the token sent by email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties: { token: { type: string } }
+      responses:
+        "200": { description: Verified }
+        "400": { description: Invalid or expired token }
+
+  /api/auth/forgot-password:
+    post:
+      security: []
+      summary: Request a password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties: { email: { type: string, format: email } }
+      responses:
+        "200": { description: Generic success response (does not reveal whether the email exists) }
+
+  /api/auth/reset-password:
+    post:
+      security: []
+      summary: Reset a password with a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200": { description: Password reset; all sessions revoked }
+        "400": { description: Invalid or expired token }
+
+  /api/auth/refresh:
+    post:
+      security: []
+      summary: Exchange a refresh token for a new access/refresh token pair (rotates the refresh token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties: { refreshToken: { type: string } }
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/AuthTokens" }
+        "401": { description: Invalid, expired, or already-rotated refresh token }
+
+  /api/auth/logout:
+    post:
+      summary: Log out (blacklists the current access token, revokes the given refresh token)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { refreshToken: { type: string } }
+      responses:
+        "200": { description: Logged out }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/me:
+    get:
+      summary: Get the current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties: { user: { $ref: "#/components/schemas/User" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/profile:
+    put:
+      summary: Update the current user's profile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                phone: { type: string }
+                address: { type: string }
+                notificationsEnabled: { type: boolean }
+      responses:
+        "200": { description: Updated }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/sessions:
+    get:
+      summary: List the current user's active sessions
+      responses:
+        "200": { description: Active sessions }
+    delete:
+      summary: Revoke all sessions except (optionally) the current one
+      responses:
+        "200": { description: Revoked }
+
+  /api/auth/sessions/{id}:
+    delete:
+      summary: Revoke one specific session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Revoked }
+        "404": { description: Session not found }
+
+  /api/auth/login-history:
+    get:
+      summary: The current user's own login history (paginated)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200": { description: Paginated login history }
+
+  /api/auth/users:
+    get:
+      summary: "Admin: list users (search/filter/paginate)"
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+                  pagination: { $ref: "#/components/schemas/Pagination" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/auth/users/{id}/role:
+    put:
+      summary: "Admin: change a user's role"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [user, staff, admin, super_admin] }
+      responses:
+        "200": { description: Updated }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/auth/users/{id}/status:
+    put:
+      summary: "Admin: change a user's status (active/suspended/locked); revokes sessions if not active"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, suspended, locked] }
+                reason: { type: string }
+      responses:
+        "200": { description: Updated }
+
+  /api/roles:
+    get:
+      summary: "Super admin: list roles"
+      responses:
+        "200": { description: Roles }
+    post:
+      summary: "Super admin: create a role"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, label]
+              properties:
+                key: { type: string }
+                label: { type: string }
+                description: { type: string }
+                permissions: { type: array, items: { type: string } }
+      responses:
+        "201": { description: Created }
+
+  /api/api-keys:
+    get:
+      summary: "Super admin: list API keys"
+      responses:
+        "200": { description: API keys }
+    post:
+      summary: "Super admin: create an API key (raw key returned once)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                scopes: { type: array, items: { type: string } }
+      responses:
+        "201": { description: "Created — raw key is only ever returned in this response" }
+
+  /api/monitoring/api/summary:
+    get:
+      summary: "Admin: aggregate request volume / error rate / latency over a recent window"
+      parameters:
+        - name: hours
+          in: query
+          schema: { type: integer, default: 24, maximum: 168 }
+      responses:
+        "200": { description: Summary }
+
+  /api/system/health:
+    get:
+      security: []
+      summary: Health check (Mongo/Redis connectivity, uptime)
+      responses:
+        "200": { description: OK }
+
+  /api/system/version:
+    get:
+      security: []
+      summary: API name/version/environment
+      responses:
+        "200": { description: OK }
+
+  /api/pets:
+    get:
+      security: []
+      summary: Public pet catalog (search/filter/paginate)
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: q
+          in: query
+          description: Free-text search (backed by a MongoDB text index)
+          schema: { type: string }
+        - name: species
+          in: query
+          schema: { type: string, enum: [Dog, Cat, Other] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [Available, Pending, Adopted, Foster] }
+      responses:
+        "200":
+          description: Paginated pet list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Pet" } }
+                  pagination: { $ref: "#/components/schemas/Pagination" }
+    post:
+      summary: "Admin: create a pet (multipart, optional image field)"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, species, gender]
+              properties:
+                name: { type: string }
+                species: { type: string, enum: [Dog, Cat, Other] }
+                gender: { type: string, enum: [Male, Female] }
+                image: { type: string, format: binary }
+      responses:
+        "201": { description: Created }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/pets/admin:
+    get:
+      summary: "Admin: full pet list, including Adopted/Foster/soft-deleted"
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: includeDeleted
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200": { description: Paginated pet list }
+
+  /api/pets/my-pets:
+    get:
+      summary: The current user's own adopted pets
+      responses:
+        "200": { description: Paginated pet list }
+
+  /api/pets/{id}:
+    get:
+      security: []
+      summary: Get one pet (404 if soft-deleted)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Pet }
+        "404": { description: Not found }
+    put:
+      summary: "Admin: update a pet (multipart, optional new image)"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Updated }
+    delete:
+      summary: "Admin: soft-delete a pet"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Deleted }
+
+  /api/pets/{id}/adopt:
+    post:
+      summary: "Admin: finalize an adoption (sets status=Adopted, owner=userId)"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties: { userId: { type: string } }
+      responses:
+        "200": { description: Adopted }
+        "400": { description: Pet is not in an adoptable status }
+
+  /api/pets/{id}/restore:
+    post:
+      summary: "Admin: restore a soft-deleted pet"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Restored }
+
+  /api/pets/{id}/permanent:
+    delete:
+      summary: "Super admin: permanently delete a pet"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Permanently deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/shelters/summary:
+    get:
+      summary: "Admin: shelter capacity/occupancy/status aggregates"
+      responses:
+        "200": { description: Summary }
+
+  /api/shelters:
+    get:
+      summary: "Admin: list shelters"
+      responses:
+        "200": { description: Shelters }
+    post:
+      summary: "Admin: create a shelter"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string } }
+      responses:
+        "201": { description: Created }
+
+  /api/shelter-care/summary/{petId}:
+    get:
+      summary: "Staff: one pet's latest health check / feeding / behavior / cage / quarantine at a glance"
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Summary }
+
+  /api/shelter-care/health-checks:
+    post:
+      summary: "Staff: log a health check"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pet, condition]
+              properties:
+                pet: { type: string }
+                condition: { type: string, enum: [Excellent, Good, Fair, Poor, Critical] }
+      responses:
+        "201": { description: Logged }
+
+  /api/shelter-care/health-checks/flagged:
+    get:
+      summary: "Staff: health checks flagged for follow-up, across all pets"
+      responses:
+        "200": { description: Flagged health checks }
+
+  /api/inventory/summary:
+    get:
+      summary: "Staff: item count / low-stock count / totals by category"
+      responses:
+        "200": { description: Summary }
+
+  /api/inventory:
+    get:
+      summary: "Staff: list inventory items"
+      parameters:
+        - name: lowStock
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200": { description: Inventory items }
+    post:
+      summary: "Staff: add an inventory item"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, category]
+              properties:
+                name: { type: string }
+                category:
+                  type: string
+                  enum: [food, medical, bedding, cleaning, equipment, office, other]
+      responses:
+        "201": { description: Created }
+
+  /api/inventory/{id}/adjust:
+    post:
+      summary: "Staff: adjust stock (restock/usage/adjustment), appends to the movements log"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, quantity]
+              properties:
+                type: { type: string, enum: [restock, usage, adjustment] }
+                quantity:
+                  type: number
+                  description: Signed delta — negative for usage, positive for restock
+      responses:
+        "200": { description: Adjusted }
+        "400": { description: Adjustment would result in negative stock }
+
+  /api/archive:
+    get:
+      summary: "Super admin: list archived records"
+      responses:
+        "200": { description: Archived records }
+
+  /api/archive/{collection}:
+    post:
+      summary: "Super admin: archive a record out of its collection entirely"
+      parameters:
+        - name: collection
+          in: path
+          required: true
+          schema: { type: string, enum: [User, Pet, Shelter, InventoryItem] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+                reason: { type: string }
+      responses:
+        "201": { description: Archived }
+
+  /api/archive/{id}/restore:
+    post:
+      summary: "Super admin: restore an archived record back to its original collection"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Restored }
