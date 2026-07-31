@@ -5,8 +5,9 @@ info:
   description: >
     Pet shelter adoption and welfare management platform. This spec covers
     only the domains implemented so far (Foundation + Identity & Access +
-    Pet & Shelter Operations); it grows one PR at a time as each domain in
-    §5.3 lands — see the per-slice manifest for what's currently covered.
+    Pet & Shelter Operations + Adoption Pipeline); it grows one PR at a
+    time as each domain in §5.3 lands — see the per-slice manifest for
+    what's currently covered.
 servers:
   - url: http://localhost:5000
     description: Local development
@@ -756,3 +757,295 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: Restored }
+
+  /api/applications:
+    post:
+      summary: >
+        Submit an adoption/foster application. Not in §5.3's original route
+        table — added deliberately (see the controller comment) since
+        nothing else creates an Application.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pet]
+              properties:
+                pet: { type: string }
+                phone: { type: string }
+                type: { type: string, enum: [adoption, foster] }
+      responses:
+        "201": { description: Submitted; the pet is put on hold (status → Pending) }
+        "400": { description: Pet not available, or an existing pending application already exists }
+    get:
+      summary: "Admin: list applications (search/filter/paginate)"
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+        - name: stage
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Paginated application list }
+
+  /api/applications/my:
+    get:
+      summary: The current user's own applications
+      responses:
+        "200": { description: Paginated application list }
+
+  /api/applications/{id}:
+    get:
+      summary: Get one application — the applicant themselves, or staff (internalNotes hidden from the applicant)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Application }
+        "403": { description: Not the applicant and not staff }
+
+  /api/applications/{id}/status:
+    put:
+      summary: "Admin: approve/reject/reset an application's outcome"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [pending, approved, rejected] } }
+      responses:
+        "200": { description: Updated; rejecting releases the pet's hold back to Available }
+
+  /api/applications/{id}/stage:
+    put:
+      summary: "Admin: move the application to a new pipeline stage; appended to stageHistory"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage]
+              properties:
+                stage:
+                  type: string
+                  enum:
+                    [
+                      submitted,
+                      document_review,
+                      interview,
+                      home_visit,
+                      risk_assessment,
+                      approved,
+                      adoption_scheduled,
+                      completed,
+                      rejected,
+                    ]
+                note: { type: string }
+      responses:
+        "200": { description: Updated }
+
+  /api/applications/{id}/vetting-status:
+    get:
+      summary: "Admin: readiness snapshot aggregating this application's interview/home-visit/risk-assessment outcomes"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Vetting status }
+
+  /api/appointments:
+    get:
+      summary: List open/booked appointment slots
+      responses:
+        "200": { description: Appointments }
+    post:
+      summary: "Admin: create a new bookable slot"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, date]
+              properties:
+                title: { type: string }
+                date: { type: string, format: date-time }
+      responses:
+        "201": { description: Created }
+
+  /api/appointments/{id}/enroll:
+    post:
+      summary: Enroll the current user into an open appointment slot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Enrolled }
+        "400": { description: Slot is not open }
+
+  /api/interviews:
+    post:
+      summary: "Admin: schedule an interview for an application"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [application, applicant, pet, scheduledDate, method]
+              properties:
+                application: { type: string }
+                applicant: { type: string }
+                pet: { type: string }
+                scheduledDate: { type: string, format: date-time }
+                method: { type: string, enum: [In-person, Video call, Phone call] }
+      responses:
+        "201": { description: Scheduled }
+    get:
+      summary: "Admin: list interviews"
+      responses:
+        "200": { description: Interviews }
+
+  /api/interviews/{id}/complete:
+    put:
+      summary: "Admin: record an interview's outcome"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties: { result: { type: string, enum: [passed, failed, pending] } }
+      responses:
+        "200": { description: Recorded }
+
+  /api/home-visits:
+    post:
+      summary: "Admin: schedule a home visit for an application"
+      responses:
+        "201": { description: Scheduled }
+    get:
+      summary: "Admin: list home visits"
+      responses:
+        "200": { description: Home visits }
+
+  /api/home-visits/{id}/complete:
+    put:
+      summary: "Admin: record a home visit's report and outcome"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [result]
+              properties:
+                result: { type: string, enum: [passed, failed, pending] }
+                report:
+                  type: object
+                  properties:
+                    safetyCheck: { type: string, enum: [Pass, Fail, "Needs Improvement"] }
+                    recommendation: { type: string, enum: [Approve, Reject, "Needs Follow-up"] }
+      responses:
+        "200": { description: Recorded }
+
+  /api/risk-assessments:
+    post:
+      summary: >
+        Admin: submit a risk assessment. totalScore/riskLevel are always
+        computed server-side from `scores` (§5.2's exact algorithm) — the
+        request schema has no field for either, so a client cannot set them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [application, applicant, pet, scores]
+              properties:
+                application: { type: string }
+                applicant: { type: string }
+                pet: { type: string }
+                scores:
+                  type: object
+                  required:
+                    [
+                      housingStability,
+                      financialReadiness,
+                      petExperience,
+                      lifestyleMatch,
+                      familyCommitment,
+                      knowledgeOfPet,
+                    ]
+                  properties:
+                    housingStability: { type: integer, minimum: 1, maximum: 5 }
+                    financialReadiness: { type: integer, minimum: 1, maximum: 5 }
+                    petExperience: { type: integer, minimum: 1, maximum: 5 }
+                    lifestyleMatch: { type: integer, minimum: 1, maximum: 5 }
+                    familyCommitment: { type: integer, minimum: 1, maximum: 5 }
+                    knowledgeOfPet: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        "201": { description: Created, with server-computed totalScore/riskLevel }
+        "400": { description: Validation failed (including unknown fields like a client-supplied totalScore) }
+
+  /api/risk-assessments/application/{applicationId}:
+    get:
+      summary: "Admin: all risk assessments for one application"
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Risk assessments }
+
+  /api/adopter-profile:
+    get:
+      summary: "Admin: paginated adopter list with application-count aggregates"
+      responses:
+        "200": { description: Adopter profiles }
+
+  /api/adopter-profile/{userId}:
+    get:
+      summary: "Admin: one adopter's full aggregated history (applications + risk assessments)"
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Adopter profile }

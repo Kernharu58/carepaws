@@ -9,7 +9,12 @@ REST + real-time API for the CarePaws pet-shelter platform. Node.js / Express / 
 - ✅ **Foundation** — middleware pipeline, error handling, structured logging, Redis-backed rate limiting, MIME-checked uploads, request validation, Socket.io auth/room layer, cron bootstrap.
 - ✅ **Identity & Access domain** — registration, login with account lockout, Google OAuth, email verification, password reset, short-lived access tokens + rotating refresh tokens, session management, roles/permissions, API keys, audit logging, full admin user-management.
 - ✅ **Pet & Shelter Operations domain** — public pet catalog (text search + filters), full admin pet CRUD with image upload, soft-delete/restore/permanent-delete, adopt flow, shelters, the five-part shelter-floor care log (health checks, feeding, behavioral observations, cages, quarantine), inventory with a stock-movement ledger, and the generic archive/restore system.
-- ⬜ Adoption Pipeline, Foster & Post-Adoption Care, Community & Engagement, Communication, Finance, Files & Documents, System & Admin Ops — not yet built. Routes for these are not mounted in `src/server.js` yet.
+- ✅ **Adoption Pipeline domain** — application submission (deliberate addition — see below), stage tracking with full history, applicant-hidden staff notes, bulk status updates, interviews, home visits (with report subdocument), risk assessments (server-computed scoring, never client-trusted), and the adopter-profile aggregate view.
+- ⬜ Foster & Post-Adoption Care, Community & Engagement, Communication, Finance, Files & Documents, System & Admin Ops — not yet built. Routes for these are not mounted in `src/server.js` yet.
+
+### A deliberate deviation from §5.3
+
+The spec's Applications route table has no `POST /`, but nothing else in the API creates an `Application` record and the core adoption UX flow requires submitting one. `POST /api/applications` was added — same treatment as the refresh-token endpoint in the Identity & Access slice: a documented, necessary addition rather than a silent gap.
 
 ## Requirements
 

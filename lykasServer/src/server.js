@@ -25,6 +25,12 @@ const shelterRoutes = require("./routes/shelterRoutes");
 const shelterCareRoutes = require("./routes/shelterCareRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const archiveRoutes = require("./routes/archiveRoutes");
+const applicationRoutes = require("./routes/applicationRoutes");
+const appointmentRoutes = require("./routes/appointmentRoutes");
+const interviewRoutes = require("./routes/interviewRoutes");
+const homeVisitRoutes = require("./routes/homeVisitRoutes");
+const riskAssessmentRoutes = require("./routes/riskAssessmentRoutes");
+const adopterProfileRoutes = require("./routes/adopterProfileRoutes");
 
 /**
  * §4 — CORS: requests with no Origin header are allowed through
@@ -90,8 +96,14 @@ async function buildApp() {
   app.use("/api/shelter-care", shelterCareRoutes);
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/archive", archiveRoutes);
-  // Remaining domains (applications, foster, payments, events, ...) mount here
-  // as their slices land — see the manifest for what's built so far.
+  app.use("/api/applications", applicationRoutes);
+  app.use("/api/appointments", appointmentRoutes);
+  app.use("/api/interviews", interviewRoutes);
+  app.use("/api/home-visits", homeVisitRoutes);
+  app.use("/api/risk-assessments", riskAssessmentRoutes);
+  app.use("/api/adopter-profile", adopterProfileRoutes);
+  // Remaining domains (foster, monitoring reports, payments, events, ...)
+  // mount here as their slices land — see the manifest for what's built so far.
 
   app.use(notFoundHandler);
   app.use(errorHandler);
