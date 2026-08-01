@@ -5,9 +5,10 @@ info:
   description: >
     Pet shelter adoption and welfare management platform. This spec covers
     only the domains implemented so far (Foundation + Identity & Access +
-    Pet & Shelter Operations + Adoption Pipeline); it grows one PR at a
-    time as each domain in §5.3 lands — see the per-slice manifest for
-    what's currently covered.
+    Pet & Shelter Operations + Adoption Pipeline + Foster & Post-Adoption
+    Care + Community & Engagement); it grows one PR at a time as each
+    domain in §5.3 lands — see the per-slice manifest for what's currently
+    covered.
 servers:
   - url: http://localhost:5000
     description: Local development
@@ -1049,3 +1050,393 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: Adopter profile }
+
+  /api/foster:
+    post:
+      summary: "Admin: create a foster placement (sets pet.status=Foster)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pet, fosterer]
+              properties:
+                pet: { type: string }
+                fosterer: { type: string }
+                weeklyReportsRequired: { type: integer }
+      responses:
+        "201": { description: Created }
+    get:
+      summary: "Admin: list foster placements"
+      responses:
+        "200": { description: Foster placements }
+
+  /api/foster/my:
+    get:
+      summary: The current user's own foster placements
+      responses:
+        "200": { description: Foster placements }
+
+  /api/foster/{id}:
+    get:
+      summary: Get one foster placement — the fosterer themselves, or staff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Foster placement }
+        "403": { description: Not the fosterer and not staff }
+
+  /api/foster/{id}/end:
+    put:
+      summary: "Admin: end an active foster placement with an outcome"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [ADOPTED, RETURNED, EXTENDED] }
+      responses:
+        "200":
+          description: >
+            Ended. ADOPTED sets the pet to Adopted with owner=fosterer;
+            RETURNED sets the pet back to Available; EXTENDED leaves the pet
+            as Foster (a new placement is expected separately).
+
+  /api/foster/{id}/can-finalize:
+    get:
+      summary: Whether this foster placement has met its weekly-reporting requirement
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: "{ canFinalize, weeklyReportsRequired, weeklyReportsSubmitted, reason }" }
+
+  /api/foster/{fosterId}/reports:
+    post:
+      summary: Submit a weekly foster report (fosterer or staff)
+      parameters:
+        - name: fosterId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weekNumber]
+              properties: { weekNumber: { type: integer, minimum: 1 } }
+      responses:
+        "201": { description: Submitted; increments weeklyReportsSubmitted on the foster }
+
+  /api/monitoring-reports:
+    post:
+      summary: Submit a post-adoption monthly check-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pet]
+              properties: { pet: { type: string } }
+      responses:
+        "201": { description: Submitted }
+
+  /api/monitoring-reports/flagged:
+    get:
+      summary: "Admin: monitoring reports flagged for follow-up"
+      responses:
+        "200": { description: Flagged reports }
+
+  /api/baby-book:
+    post:
+      summary: Add a baby book entry for an adopted pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pet, title]
+              properties:
+                pet: { type: string }
+                title: { type: string }
+                category: { type: string, enum: [Milestone, Health, "Funny Moment", Training, "First Time", General] }
+      responses:
+        "201": { description: Created }
+
+  /api/baby-book/{petId}:
+    get:
+      summary: All baby book entries for one pet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Entries }
+
+  /api/medical/summary/{petId}:
+    get:
+      summary: "Staff: a pet's 5 most recent vaccinations/vet-visits/records"
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Summary }
+
+  /api/medical/vaccinations/upcoming:
+    get:
+      summary: "Staff: vaccinations due within the next N days (default 30), across all pets"
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30, maximum: 180 }
+      responses:
+        "200": { description: Upcoming vaccinations }
+
+  /api/emergency-reports:
+    post:
+      summary: Report a stray/injured/abused/abandoned animal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, description]
+              properties:
+                type: { type: string, enum: [stray_animal, injured_animal, abuse_report, abandoned_animal, other] }
+                description: { type: string }
+      responses:
+        "201": { description: Submitted }
+    get:
+      summary: "Admin: list emergency reports (search/filter/paginate)"
+      responses:
+        "200": { description: Emergency reports }
+
+  /api/events:
+    get:
+      security: []
+      summary: List events (public — search/filter/paginate, defaults to soonest-first)
+      responses:
+        "200": { description: Events }
+    post:
+      summary: "Admin: create an event"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, date]
+              properties:
+                title: { type: string }
+                date: { type: string, format: date-time }
+                maxAttendees: { type: integer }
+      responses:
+        "201": { description: Created }
+
+  /api/events/{id}/register:
+    post:
+      summary: Register the current user for an event
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "201": { description: Registered }
+        "400": { description: Already registered, or the event is full }
+    delete:
+      summary: Cancel the current user's registration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Cancelled }
+
+  /api/events/{id}/volunteers:
+    post:
+      summary: "Admin: assign a volunteer to an event"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [volunteer]
+              properties: { volunteer: { type: string }, role: { type: string } }
+      responses:
+        "201": { description: Assigned }
+
+  /api/event-assignments/my:
+    get:
+      summary: The current user's own event-volunteer assignments (if they're a registered volunteer)
+      responses:
+        "200": { description: Assignments }
+
+  /api/event-assignments/{id}/confirm:
+    put:
+      summary: Confirm an assignment — the assigned volunteer themselves, or staff
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Confirmed }
+        "403": { description: Not the assigned volunteer and not staff }
+
+  /api/volunteers/register:
+    post:
+      summary: Submit a volunteer application for the current user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motivation: { type: string }
+                availability:
+                  type: array
+                  items: { type: string, enum: ["Weekday mornings", "Weekday afternoons", Weekends, Flexible] }
+      responses:
+        "201": { description: Submitted }
+        "400": { description: An application already exists for this account }
+
+  /api/volunteers/{id}/status:
+    put:
+      summary: "Admin: approve/reject/deactivate a volunteer application"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [pending, approved, rejected, inactive] } }
+      responses:
+        "200": { description: Updated }
+
+  /api/volunteers/{id}/hours:
+    post:
+      summary: "Admin: log volunteer hours — updates both Volunteer.totalHours and User.volunteerHours"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hours]
+              properties: { hours: { type: number, minimum: 0, maximum: 24 } }
+      responses:
+        "200": { description: Logged }
+
+  /api/feedback/public:
+    get:
+      security: []
+      summary: Public, admin-approved feedback (isPublic=true, status in [responded, resolved])
+      responses:
+        "200": { description: Public feedback }
+
+  /api/feedback:
+    post:
+      summary: Submit feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, message]
+              properties:
+                type: { type: string, enum: [general, complaint, review, suggestion] }
+                message: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        "201": { description: Submitted }
+
+  /api/announcements/active:
+    get:
+      security: []
+      summary: Currently-active announcements (isActive, within startAt/endAt, matching audience)
+      parameters:
+        - name: audience
+          in: query
+          schema: { type: string, enum: [user, admin], default: user }
+      responses:
+        "200": { description: Active announcements }
+
+  /api/announcements:
+    post:
+      summary: "Admin: create an announcement"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, message]
+              properties:
+                title: { type: string }
+                message: { type: string }
+                level: { type: string, enum: [info, warning, critical] }
+                audience: { type: string, enum: [all, admin, user] }
+      responses:
+        "201": { description: Created }
+
+  /api/content/public:
+    get:
+      security: []
+      summary: Published CMS content (FAQ/policy/page/announcement), optionally filtered by type/category
+      responses:
+        "200": { description: Published content }
+
+  /api/content/public/slug/{slug}:
+    get:
+      security: []
+      summary: One published content item by slug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Content item }
+        "404": { description: Not found or not published }

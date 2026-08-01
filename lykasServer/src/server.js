@@ -31,6 +31,17 @@ const interviewRoutes = require("./routes/interviewRoutes");
 const homeVisitRoutes = require("./routes/homeVisitRoutes");
 const riskAssessmentRoutes = require("./routes/riskAssessmentRoutes");
 const adopterProfileRoutes = require("./routes/adopterProfileRoutes");
+const fosterRoutes = require("./routes/fosterRoutes");
+const monitoringReportRoutes = require("./routes/monitoringReportRoutes");
+const babyBookRoutes = require("./routes/babyBookRoutes");
+const medicalRecordRoutes = require("./routes/medicalRecordRoutes");
+const emergencyReportRoutes = require("./routes/emergencyReportRoutes");
+const eventRoutes = require("./routes/eventRoutes");
+const eventAssignmentRoutes = require("./routes/eventAssignmentRoutes");
+const volunteerRoutes = require("./routes/volunteerRoutes");
+const feedbackRoutes = require("./routes/feedbackRoutes");
+const announcementRoutes = require("./routes/announcementRoutes");
+const contentRoutes = require("./routes/contentRoutes");
 
 /**
  * §4 — CORS: requests with no Origin header are allowed through
@@ -102,8 +113,20 @@ async function buildApp() {
   app.use("/api/home-visits", homeVisitRoutes);
   app.use("/api/risk-assessments", riskAssessmentRoutes);
   app.use("/api/adopter-profile", adopterProfileRoutes);
-  // Remaining domains (foster, monitoring reports, payments, events, ...)
-  // mount here as their slices land — see the manifest for what's built so far.
+  app.use("/api/foster", fosterRoutes);
+  app.use("/api/monitoring-reports", monitoringReportRoutes);
+  app.use("/api/baby-book", babyBookRoutes);
+  app.use("/api/medical", medicalRecordRoutes);
+  app.use("/api/emergency-reports", emergencyReportRoutes);
+  app.use("/api/events", eventRoutes);
+  app.use("/api/event-assignments", eventAssignmentRoutes);
+  app.use("/api/volunteers", volunteerRoutes);
+  app.use("/api/feedback", feedbackRoutes);
+  app.use("/api/announcements", announcementRoutes);
+  app.use("/api/content", contentRoutes);
+  // Remaining domains (communication, finance, files & documents, system &
+  // admin ops) mount here as their slices land — see the manifest for what's
+  // built so far.
 
   app.use(notFoundHandler);
   app.use(errorHandler);
