@@ -6,9 +6,9 @@ info:
     Pet shelter adoption and welfare management platform. This spec covers
     only the domains implemented so far (Foundation + Identity & Access +
     Pet & Shelter Operations + Adoption Pipeline + Foster & Post-Adoption
-    Care + Community & Engagement); it grows one PR at a time as each
-    domain in §5.3 lands — see the per-slice manifest for what's currently
-    covered.
+    Care + Community & Engagement + Communication + Finance); it grows one
+    PR at a time as each domain in §5.3 lands — see the per-slice manifest
+    for what's currently covered.
 servers:
   - url: http://localhost:5000
     description: Local development
@@ -1440,3 +1440,226 @@ paths:
       responses:
         "200": { description: Content item }
         "404": { description: Not found or not published }
+
+  /api/notifications/unread-count:
+    get:
+      summary: The current user's unread notification count
+      responses:
+        "200": { description: "{ count }" }
+
+  /api/notifications/my:
+    get:
+      summary: The current user's notification inbox
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200": { description: Notifications }
+
+  /api/notifications/send:
+    post:
+      summary: "Admin: broadcast a notification to an explicit list of recipients"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipients, type, title, message]
+              properties:
+                recipients: { type: array, items: { type: string } }
+                type:
+                  type: string
+                  description: One of the 25 Notification.type values (§5.2) — e.g. APPLICATION_APPROVED, INTERVIEW_SCHEDULED, GENERAL
+                title: { type: string }
+                message: { type: string }
+      responses:
+        "201": { description: "{ sent, total }" }
+
+  /api/messages/{userId}:
+    get:
+      summary: >
+        Full message history for one conversation, oldest-first. Owner or
+        staff only. REST fallback alongside the real-time Socket.io
+        transport — the mobile chat screen uses this for the initial
+        history load, not just live updates (§6.2).
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Messages }
+        "403": { description: Not the conversation owner and not staff }
+
+  /api/chat-sessions:
+    get:
+      summary: "Staff-only: every conversation, most-recent-message-first — powers the admin chat console's conversation list"
+      responses:
+        "200": { description: Chat sessions }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/notes/{entityType}/{entityId}:
+    get:
+      summary: "Staff: internal notes attached to an entity"
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema: { type: string, enum: [Pet, User, Volunteer, InKindDonation, Shelter] }
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Notes }
+    post:
+      summary: "Staff: attach an internal note to an entity"
+      parameters:
+        - name: entityType
+          in: path
+          required: true
+          schema: { type: string, enum: [Pet, User, Volunteer, InKindDonation, Shelter] }
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties: { text: { type: string } }
+      responses:
+        "201": { description: Added }
+
+  /api/email-templates/{key}:
+    get:
+      summary: "Staff: get one email template by key"
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Template }
+    put:
+      summary: "Staff: update (or create, via upsert) an email template by key"
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Updated }
+
+  /api/email-templates/{key}/preview:
+    post:
+      summary: "Staff: render a template's subject/body with sample variables substituted"
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variables: { type: object, additionalProperties: { type: string } }
+      responses:
+        "200": { description: "{ subject, bodyHtml }" }
+
+  /api/payments/webhook:
+    post:
+      security: []
+      summary: >
+        PayMongo → server. Not JWT-protected — trust boundary is the
+        Paymongo-Signature HMAC check inside the handler, verified against
+        the exact raw request bytes (this route is mounted behind
+        express.raw(), not the global JSON parser — see server.js).
+      responses:
+        "200": { description: Acknowledged (processed, or a signature-verified event for an unknown payment) }
+        "401": { description: Missing, malformed, tampered, or stale signature }
+
+  /api/payments/create-checkout:
+    post:
+      summary: >
+        Create a PayMongo Checkout Session for a donation, adoption fee, or
+        event fee — the §4 production fix that extends Payment.type beyond
+        just "donation".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, amount]
+              properties:
+                type: { type: string, enum: [donation, adoption_fee, event_fee] }
+                amount: { type: integer, description: "PHP centavos — ₱500.00 = 50000" }
+                refModel: { type: string, enum: [Application, Event] }
+                refId: { type: string }
+      responses:
+        "201": { description: "{ payment, checkoutUrl }" }
+
+  /api/payments/summary:
+    get:
+      summary: "Admin: total collected + breakdowns by status and type"
+      responses:
+        "200": { description: Summary }
+
+  /api/payments/{id}/refund:
+    put:
+      summary: "Admin: mark a paid payment as refunded"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Refunded }
+        "400": { description: Payment is not in paid status }
+
+  /api/donations/goods:
+    post:
+      summary: Submit an in-kind (goods) donation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                quantity: { type: number }
+                dropOff: { type: string, enum: [walk_in, schedule, courier] }
+      responses:
+        "201": { description: Submitted }
+    get:
+      summary: "Admin: list in-kind donations (search/filter/paginate)"
+      responses:
+        "200": { description: Donations }
+
+  /api/donations/goods/{id}/status:
+    patch:
+      summary: "Admin: update a donation's status (pending → confirmed → received, or cancelled)"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [pending, confirmed, received, cancelled] } }
+      responses:
+        "200": { description: "Updated — receivedAt is stamped automatically on transition to received" }

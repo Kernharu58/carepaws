@@ -7,6 +7,7 @@ const { AppError, asyncHandler } = require("../utils/AppError");
 const { buildListQuery, buildPagination, paginationParams } = require("../utils/queryBuilder");
 const { logAudit } = require("../utils/auditLogger");
 const { sendCsv } = require("../utils/exportUtil");
+const { notify } = require("../utils/notificationHelper");
 
 const searchFields = ["phone", "address"];
 const filterFields = ["status", "stage", "type"];
@@ -191,6 +192,21 @@ const updateStatus = asyncHandler(async (req, res) => {
   }
 
   await application.save();
+
+  if (["approved", "rejected"].includes(application.status)) {
+    await notify({
+      recipient: application.applicant,
+      sender: req.user._id,
+      type: application.status === "approved" ? "APPLICATION_APPROVED" : "APPLICATION_REJECTED",
+      title: application.status === "approved" ? "Your application was approved!" : "Update on your application",
+      message:
+        application.status === "approved"
+          ? "Congratulations — your adoption application has been approved."
+          : "Your adoption application was not approved this time.",
+      refModel: "Application",
+      refId: application._id,
+    });
+  }
 
   await logAudit({
     actor: req.user._id,

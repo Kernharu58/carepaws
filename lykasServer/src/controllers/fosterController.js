@@ -3,6 +3,7 @@ const Pet = require("../models/Pet");
 const { AppError, asyncHandler } = require("../utils/AppError");
 const { buildPagination, paginationParams } = require("../utils/queryBuilder");
 const { logAudit } = require("../utils/auditLogger");
+const { notify } = require("../utils/notificationHelper");
 
 function isStaff(user) {
   return ["staff", "admin", "super_admin"].includes(user.role);
@@ -73,6 +74,16 @@ const createFoster = asyncHandler(async (req, res) => {
     action: "foster.create",
     metadata: { fosterId: foster._id, pet: pet._id, fosterer: foster.fosterer },
     req,
+  });
+
+  await notify({
+    recipient: foster.fosterer,
+    sender: req.user._id,
+    type: "FOSTER_STARTED",
+    title: "Foster placement started",
+    message: `You're now fostering ${pet.name}. Thank you for opening your home!`,
+    refModel: "Foster",
+    refId: foster._id,
   });
 
   res.status(201).json({ success: true, data: foster });
@@ -149,6 +160,16 @@ const endFoster = asyncHandler(async (req, res) => {
     entityId: foster.pet,
     metadata: { fosterId: foster._id, outcome: foster.outcome },
     req,
+  });
+
+  await notify({
+    recipient: foster.fosterer,
+    sender: req.user._id,
+    type: "FOSTER_ENDED",
+    title: "Foster placement ended",
+    message: `Your foster placement has ended (outcome: ${foster.outcome}). Thank you for fostering!`,
+    refModel: "Foster",
+    refId: foster._id,
   });
 
   res.status(200).json({ success: true, data: foster });

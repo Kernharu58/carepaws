@@ -1,6 +1,7 @@
 const { Server } = require("socket.io");
 const { verifyAccessToken } = require("./utils/tokenUtils");
 const User = require("./models/User");
+const Message = require("./models/Message");
 const { logger } = require("./utils/logger");
 
 /**
@@ -11,10 +12,11 @@ const { logger } = require("./utils/logger");
  * additionally join a shared `admin_room`, but only by explicitly emitting
  * `joinAdmin` — it is NOT automatic on connect, matching the real source.
  *
- * The `sendMessage`/`receiveMessage` chat events themselves depend on the
- * Message model, which lands with the Communication domain in a later
- * slice — this module wires the connection/auth/room layer they'll sit on
- * top of, rather than shipping a chat handler with nothing to persist to.
+ * `sendMessage` persists to Mongo (Message model, Communication domain) and
+ * emits `receiveMessage` to both the conversation owner's room and
+ * `admin_room` in real time. `sender` is always derived server-side —
+ * "user" if the socket's own user id matches the conversation's `userId`,
+ * "shelter" otherwise — never trusting a client-supplied sender.
  */
 function extractSocketToken(socket) {
   const fromAuth = socket.handshake.auth?.token;
@@ -56,6 +58,33 @@ function attachSocketServer(httpServer, corsOptions) {
     socket.on("joinAdmin", () => {
       if (["staff", "admin", "super_admin"].includes(socket.user.role)) {
         socket.join("admin_room");
+      }
+    });
+
+    socket.on("sendMessage", async (data, callback) => {
+      try {
+        const conversationUserId = String(data?.userId || "");
+        if (!conversationUserId) throw new Error("userId is required");
+
+        // Derived server-side, never from the client payload (§4).
+        const sender = socket.user._id.toString() === conversationUserId ? "user" : "shelter";
+        // Only the conversation owner or staff may post into a conversation.
+        if (sender === "shelter" && !["staff", "admin", "super_admin"].includes(socket.user.role)) {
+          throw new Error("Not authorized to post in this conversation");
+        }
+
+        const message = await Message.create({
+          userId: conversationUserId,
+          sender,
+          text: data.text,
+          image: data.image,
+        });
+
+        io.to(conversationUserId).to("admin_room").emit("receiveMessage", message);
+        callback?.({ success: true, data: message });
+      } catch (err) {
+        logger.warn({ err: err.message }, "sendMessage failed");
+        callback?.({ success: false, message: err.message });
       }
     });
 

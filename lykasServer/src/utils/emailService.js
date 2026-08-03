@@ -34,9 +34,9 @@ function getTransporter() {
   return transporter;
 }
 
-// Minimal built-in templates for what the Identity & Access domain needs.
-// Once the Communication domain (EmailTemplate model) lands, this should
-// try a DB-backed template by `key` first and fall back to these.
+// Minimal built-in fallback templates — used when no DB-backed
+// EmailTemplate exists for a key yet, or the EmailTemplate collection is
+// empty (e.g. a fresh install before an admin has customized anything).
 const DEFAULT_TEMPLATES = {
   "verify-email": ({ displayName, verifyUrl }) => ({
     subject: "Verify your CarePaws account",
@@ -55,6 +55,34 @@ function escapeHtml(str = "") {
 }
 
 /**
+ * Resolves subject/html for a template key: a DB-backed, admin-editable
+ * EmailTemplate (Communication domain) takes priority when one exists and
+ * is active, so ops can tweak copy without a deploy; otherwise falls back
+ * to the built-in defaults above. Requiring the model lazily, inside the
+ * function, avoids a circular-require issue at module load time and keeps
+ * this util loadable even in contexts where Mongoose isn't connected yet.
+ */
+async function resolveTemplate(templateKey, variables) {
+  try {
+    const EmailTemplate = require("../models/EmailTemplate");
+    const { substituteVariables } = require("../controllers/emailTemplateController");
+    const dbTemplate = await EmailTemplate.findOne({ key: templateKey, isActive: true });
+
+    if (dbTemplate) {
+      return {
+        subject: substituteVariables(dbTemplate.subject, variables),
+        html: substituteVariables(dbTemplate.bodyHtml, variables),
+      };
+    }
+  } catch (err) {
+    logger.warn({ err, templateKey }, "Could not check for a DB-backed email template — using built-in default");
+  }
+
+  const fallback = DEFAULT_TEMPLATES[templateKey];
+  return fallback ? fallback(variables) : null;
+}
+
+/**
  * Sends a templated email. Returns { emailSkipped: true } instead of
  * throwing when no transport is configured, so signup/reset flows still
  * succeed in dev environments without email set up.
@@ -63,20 +91,18 @@ async function sendTemplatedEmail(templateKey, to, variables = {}) {
   const client = getTransporter();
   if (!client) return { emailSkipped: true };
 
-  const template = DEFAULT_TEMPLATES[templateKey];
-  if (!template) {
+  const resolved = await resolveTemplate(templateKey, variables);
+  if (!resolved) {
     logger.error({ templateKey }, "Unknown email template key");
     return { emailSkipped: true };
   }
-
-  const { subject, html } = template(variables);
 
   try {
     await client.sendMail({
       from: process.env.EMAIL_USER || process.env.EMAIL_USERNAME,
       to,
-      subject,
-      html,
+      subject: resolved.subject,
+      html: resolved.html,
     });
     return { emailSkipped: false };
   } catch (err) {

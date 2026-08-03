@@ -1,6 +1,7 @@
 const Interview = require("../models/Interview");
 const { AppError, asyncHandler } = require("../utils/AppError");
 const { buildPagination, paginationParams } = require("../utils/queryBuilder");
+const { notify } = require("../utils/notificationHelper");
 
 const myInterviews = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginationParams(req.query);
@@ -19,6 +20,17 @@ const createInterview = asyncHandler(async (req, res) => {
     ...req.body,
     conductedBy: req.body.conductedBy || req.user._id,
   });
+
+  await notify({
+    recipient: interview.applicant,
+    sender: req.user._id,
+    type: "INTERVIEW_SCHEDULED",
+    title: "Interview scheduled",
+    message: `Your adoption interview is scheduled for ${new Date(interview.scheduledDate).toLocaleString()}.`,
+    refModel: "Interview",
+    refId: interview._id,
+  });
+
   res.status(201).json({ success: true, data: interview });
 });
 
@@ -71,6 +83,16 @@ const completeInterview = asyncHandler(async (req, res) => {
   interview.completedAt = new Date();
   await interview.save();
 
+  await notify({
+    recipient: interview.applicant,
+    sender: req.user._id,
+    type: "INTERVIEW_RESULT",
+    title: "Interview result available",
+    message: `Your interview has been marked as ${interview.result}.`,
+    refModel: "Interview",
+    refId: interview._id,
+  });
+
   res.status(200).json({ success: true, data: interview });
 });
 
@@ -81,6 +103,16 @@ const cancelInterview = asyncHandler(async (req, res) => {
   interview.status = "cancelled";
   interview.cancelReason = req.body.cancelReason;
   await interview.save();
+
+  await notify({
+    recipient: interview.applicant,
+    sender: req.user._id,
+    type: "INTERVIEW_CANCELLED",
+    title: "Interview cancelled",
+    message: interview.cancelReason || "Your scheduled interview has been cancelled.",
+    refModel: "Interview",
+    refId: interview._id,
+  });
 
   res.status(200).json({ success: true, data: interview });
 });

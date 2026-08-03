@@ -42,6 +42,13 @@ const volunteerRoutes = require("./routes/volunteerRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const announcementRoutes = require("./routes/announcementRoutes");
 const contentRoutes = require("./routes/contentRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
+const messageRoutes = require("./routes/messageRoutes");
+const chatSessionRoutes = require("./routes/chatSessionRoutes");
+const noteRoutes = require("./routes/noteRoutes");
+const emailTemplateRoutes = require("./routes/emailTemplateRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+const inKindDonationRoutes = require("./routes/inKindDonationRoutes");
 
 /**
  * §4 — CORS: requests with no Origin header are allowed through
@@ -85,7 +92,19 @@ async function buildApp() {
   // not a "textbook" order: cors → body parsing → helmet → global rate
   // limiter (/api) → apiMonitor (/api) → maintenanceMode (global) → routes.
   app.use(cors(corsOptions));
-  app.use(express.json());
+
+  // §11.6 — PayMongo webhook signature verification (paymentController.js)
+  // needs the exact raw bytes PayMongo signed. The global express.json()
+  // below would parse-and-discard those bytes before the webhook handler
+  // ever sees them, breaking every signature check. This skips JSON
+  // parsing for that one path and instead gives it express.raw(), which
+  // must run first, in registration order, for the skip to take effect.
+  app.use("/api/payments/webhook", express.raw({ type: "*/*" }));
+  app.use((req, res, next) => {
+    if (req.path === "/api/payments/webhook") return next();
+    express.json()(req, res, next);
+  });
+
   app.use(express.urlencoded({ extended: true }));
   app.use(requestId); // §11.5 addition — needed before anything logs
   app.use(helmet());
@@ -124,9 +143,15 @@ async function buildApp() {
   app.use("/api/feedback", feedbackRoutes);
   app.use("/api/announcements", announcementRoutes);
   app.use("/api/content", contentRoutes);
-  // Remaining domains (communication, finance, files & documents, system &
-  // admin ops) mount here as their slices land — see the manifest for what's
-  // built so far.
+  app.use("/api/notifications", notificationRoutes);
+  app.use("/api/messages", messageRoutes);
+  app.use("/api/chat-sessions", chatSessionRoutes);
+  app.use("/api/notes", noteRoutes);
+  app.use("/api/email-templates", emailTemplateRoutes);
+  app.use("/api/payments", paymentRoutes);
+  app.use("/api/donations/goods", inKindDonationRoutes);
+  // Remaining domains (files & documents, system & admin ops) mount here
+  // as their slices land — see the manifest for what's built so far.
 
   app.use(notFoundHandler);
   app.use(errorHandler);
