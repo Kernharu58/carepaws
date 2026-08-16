@@ -226,4 +226,33 @@ describe("Application pipeline: submit → stage transitions → approve/reject"
     expect(cleanRes.body.data.totalScore).toBe(6);
     expect(cleanRes.body.data.riskLevel).toBe("High");
   });
+
+  it("lets staff record a walk-in application on behalf of a named applicant", async () => {
+    const { accessToken: adminToken } = await makeUser("admin");
+    const { user: walkInApplicant } = await makeUser("user");
+    const pet = await makePet(adminToken);
+
+    const res = await request(app)
+      .post("/api/applications")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ pet: pet._id, applicant: walkInApplicant._id.toString(), phone: "555-0199" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.applicant).toBe(walkInApplicant._id.toString());
+  });
+
+  it("ignores a client-supplied applicant field from a regular (non-staff) user", async () => {
+    const { accessToken: adminToken } = await makeUser("admin");
+    const { user: submittingUser, accessToken: userToken } = await makeUser("user");
+    const { user: someoneElse } = await makeUser("user");
+    const pet = await makePet(adminToken);
+
+    const res = await request(app)
+      .post("/api/applications")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ pet: pet._id, applicant: someoneElse._id.toString() });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.applicant).toBe(submittingUser._id.toString());
+  });
 });

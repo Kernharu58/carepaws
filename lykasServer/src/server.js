@@ -49,6 +49,19 @@ const noteRoutes = require("./routes/noteRoutes");
 const emailTemplateRoutes = require("./routes/emailTemplateRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const inKindDonationRoutes = require("./routes/inKindDonationRoutes");
+const fileAssetRoutes = require("./routes/fileAssetRoutes");
+const userDocumentRoutes = require("./routes/userDocumentRoutes");
+const auditLogRoutes = require("./routes/auditLogRoutes");
+const errorLogRoutes = require("./routes/errorLogRoutes");
+const settingsRoutes = require("./routes/settingsRoutes");
+const featureFlagRoutes = require("./routes/featureFlagRoutes");
+const backupRoutes = require("./routes/backupRoutes");
+const migrationRoutes = require("./routes/migrationRoutes");
+const scheduledJobRoutes = require("./routes/scheduledJobRoutes");
+const duplicateRoutes = require("./routes/duplicateRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
+const reportsRoutes = require("./routes/reportsRoutes");
 
 /**
  * §4 — CORS: requests with no Origin header are allowed through
@@ -150,8 +163,23 @@ async function buildApp() {
   app.use("/api/email-templates", emailTemplateRoutes);
   app.use("/api/payments", paymentRoutes);
   app.use("/api/donations/goods", inKindDonationRoutes);
-  // Remaining domains (files & documents, system & admin ops) mount here
-  // as their slices land — see the manifest for what's built so far.
+  app.use("/api/files", fileAssetRoutes);
+  app.use("/api/documents", userDocumentRoutes);
+  app.use("/api/audit-logs", auditLogRoutes);
+  app.use("/api/errors", errorLogRoutes);
+  app.use("/api/settings", settingsRoutes);
+  app.use("/api/feature-flags", featureFlagRoutes);
+  app.use("/api/backups", backupRoutes);
+  app.use("/api/migrations", migrationRoutes);
+  app.use("/api/scheduled-jobs", scheduledJobRoutes);
+  app.use("/api/duplicates", duplicateRoutes);
+  app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/analytics", analyticsRoutes);
+  app.use("/api/reports", reportsRoutes);
+  // Every domain from §5.2/§5.3 is now mounted — see the manifest for what's
+  // been retrofitted (notification triggers, DB-backed maintenance mode,
+  // ScheduledJobLog persistence) vs. what's a real, working, but
+  // deliberately-scoped first pass.
 
   app.use(notFoundHandler);
   app.use(errorHandler);

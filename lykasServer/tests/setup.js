@@ -10,6 +10,7 @@ process.env.ACCESS_TOKEN_EXPIRES_IN = "15m";
 process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS = "30";
 process.env.NODE_ENV = "test";
 process.env.MOBILE_APP_URL = "carepaws://";
+process.env.MAINTENANCE_CACHE_TTL_MS = "50"; // fast, deterministic maintenance-mode tests
 // Deliberately unset EMAIL_*/REDIS_URL in tests — exercises the graceful
 // degradation paths (emailSkipped:true, in-memory rate-limit fallback)
 // rather than requiring live infrastructure to run the suite.

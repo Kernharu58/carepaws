@@ -3,12 +3,13 @@ info:
   title: CarePaws API
   version: 1.0.0-in-progress
   description: >
-    Pet shelter adoption and welfare management platform. This spec covers
-    only the domains implemented so far (Foundation + Identity & Access +
-    Pet & Shelter Operations + Adoption Pipeline + Foster & Post-Adoption
-    Care + Community & Engagement + Communication + Finance); it grows one
-    PR at a time as each domain in §5.3 lands — see the per-slice manifest
-    for what's currently covered.
+    Pet shelter adoption and welfare management platform. All 10 backend
+    domains from §5.2/§5.3 are now implemented (Foundation, Identity &
+    Access, Pet & Shelter Operations, Adoption Pipeline, Foster &
+    Post-Adoption Care, Community & Engagement, Communication, Finance,
+    Files & Documents, System & Admin Ops). The admin panel and mobile app
+    have not been started. See the backend README's "What's honestly
+    still missing" section for known gaps within the backend itself.
 servers:
   - url: http://localhost:5000
     description: Local development
@@ -1663,3 +1664,253 @@ paths:
               properties: { status: { type: string, enum: [pending, confirmed, received, cancelled] } }
       responses:
         "200": { description: "Updated — receivedAt is stamped automatically on transition to received" }
+
+  /api/files:
+    get:
+      summary: "Admin: list file assets (search/filter by category)"
+      responses:
+        "200": { description: File assets }
+    post:
+      summary: Upload a generic file asset
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, category]
+              properties:
+                file: { type: string, format: binary }
+                category: { type: string, enum: [adoption_document, id_document, medical_record, image, other] }
+      responses:
+        "201": { description: Uploaded }
+
+  /api/files/storage-stats:
+    get:
+      summary: "Admin: total files/bytes stored, broken down by category"
+      responses:
+        "200": { description: Storage stats }
+
+  /api/documents/my:
+    get:
+      summary: The current user's own verification documents
+      responses:
+        "200": { description: Documents }
+
+  /api/documents:
+    post:
+      summary: Upload a verification document (government ID, proof of address, etc.)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, type]
+              properties:
+                file: { type: string, format: binary }
+                type:
+                  type: string
+                  enum: [government_id, proof_of_address, proof_of_income, house_photo, pet_owner_agreement, other]
+      responses:
+        "201": { description: Uploaded }
+
+  /api/documents/{id}/verify:
+    put:
+      summary: "Admin: verify or reject a document; notifies the owner"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [pending, verified, rejected] }
+                rejectedReason: { type: string }
+      responses:
+        "200": { description: Updated }
+
+  /api/audit-logs:
+    get:
+      summary: "Super admin: system-wide audit log (distinct from /api/auth/audit-logs — see README)"
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: entityType
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: Audit log entries }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/audit-logs/actions:
+    get:
+      summary: "Super admin: the distinct set of action strings ever logged, for a filter dropdown"
+      responses:
+        "200": { description: Action names }
+
+  /api/errors/report:
+    post:
+      security: []
+      summary: Client-reportable error sink — works whether or not the caller is authenticated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                source: { type: string, enum: [server, admin, mobile] }
+                message: { type: string }
+                severity: { type: string, enum: [info, warning, error, fatal] }
+      responses:
+        "201": { description: Recorded }
+
+  /api/settings:
+    get:
+      summary: "Admin: shelter-level settings (address/phone/email)"
+      responses:
+        "200": { description: Settings — created on first read if none exist yet }
+    put:
+      summary: "Admin: update shelter-level settings"
+      responses:
+        "200": { description: Updated }
+
+  /api/feature-flags/public:
+    get:
+      summary: "key+enabled only, for any authenticated client's feature-gating UI"
+      responses:
+        "200": { description: Public flags }
+
+  /api/feature-flags/{key}:
+    put:
+      summary: "Admin: toggle a feature flag — key 'maintenance_mode' drives the API-wide maintenance gate"
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { enabled: { type: boolean }, description: { type: string } }
+      responses:
+        "200": { description: Updated }
+
+  /api/backups:
+    get:
+      summary: "Super admin: list backups"
+      responses:
+        "200": { description: Backups }
+    post:
+      summary: >
+        Super admin: start a backup (mongodump, async — poll GET / for
+        status). Requires mongodb-database-tools on the host.
+      responses:
+        "202": { description: Started }
+
+  /api/backups/{id}/restore:
+    post:
+      summary: >
+        Super admin: restore from a completed backup (mongorestore --drop).
+        Genuinely destructive — not transactional, not a one-click-safe
+        operation. See the backend README.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Restored }
+        "400": { description: Backup is not in a restorable (completed) state }
+
+  /api/migrations:
+    get:
+      summary: "Super admin: list recorded (applied) migrations"
+      responses:
+        "200": { description: Migrations }
+    post:
+      summary: >
+        Super admin: record that a named migration has been applied. This
+        endpoint logs a migration record — it does not execute migration
+        code (see the controller for why that's deliberate).
+      responses:
+        "201": { description: Recorded }
+
+  /api/scheduled-jobs:
+    get:
+      summary: "Admin: every known job with its most recent run"
+      responses:
+        "200": { description: Jobs }
+
+  /api/scheduled-jobs/{jobKey}/run:
+    post:
+      summary: "Admin: run a job immediately (triggeredBy=manual), logged the same as a cron run"
+      parameters:
+        - name: jobKey
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Run result }
+        "404": { description: Unknown job key }
+
+  /api/duplicates/users:
+    get:
+      summary: "Admin: users grouped by matching display name (count > 1) — a low-noise duplicate signal"
+      responses:
+        "200": { description: Duplicate groups }
+
+  /api/duplicates/pets:
+    get:
+      summary: "Admin: pets grouped by matching name+species (count > 1)"
+      responses:
+        "200": { description: Duplicate groups }
+
+  /api/dashboard:
+    get:
+      summary: "Admin: single-screen overview (available pets, pending applications, active fosters, upcoming events, open emergency reports, pending volunteers, this month's donations)"
+      responses:
+        "200": { description: Overview }
+
+  /api/analytics/overview:
+    get:
+      summary: "Admin: total pets/users/applications, adoption rate"
+      responses:
+        "200": { description: Overview }
+
+  /api/analytics/trends:
+    get:
+      summary: "Admin: new applications and new pets by month, trailing N months (default 6)"
+      parameters:
+        - name: months
+          in: query
+          schema: { type: integer, default: 6, maximum: 24 }
+      responses:
+        "200": { description: Trends }
+
+  /api/reports/financial:
+    get:
+      summary: "Admin: cash payments by type + in-kind donations by status, over an optional date range"
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200": { description: Financial report }
+
+  /api/reports/welfare:
+    get:
+      summary: "Admin: flagged health checks and behavioral observations — the shelter-floor welfare signal"
+      responses:
+        "200": { description: Welfare report }

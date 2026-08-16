@@ -3,6 +3,10 @@ const { z } = require("zod");
 const createApplicationSchema = z
   .object({
     pet: z.string().min(1),
+    // Optional — only staff/admin can meaningfully use this (see the
+    // controller); a regular user's own applicant is always themselves
+    // regardless of what's sent here.
+    applicant: z.string().optional(),
     phone: z.string().trim().max(30).optional(),
     address: z.string().trim().max(300).optional(),
     experience: z.string().trim().max(2000).optional(),

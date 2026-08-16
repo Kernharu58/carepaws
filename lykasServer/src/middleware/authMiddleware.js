@@ -45,7 +45,33 @@ function requireRole(...roles) {
   };
 }
 
+/**
+ * Attaches req.user if a valid, non-blacklisted access token is present,
+ * but never rejects the request when one isn't — for routes that behave
+ * the same either way but personalize when they can (e.g. error reports
+ * from a logged-out screen still get accepted, just without a userId).
+ */
+const optionalAuth = asyncHandler(async (req, res, next) => {
+  const token = extractToken(req);
+  if (!token) return next();
+
+  try {
+    const blacklisted = await TokenBlacklist.exists({ token });
+    if (blacklisted) return next();
+
+    const payload = verifyAccessToken(token);
+    const user = await User.findById(payload.id);
+    if (user && !user.isDeleted && user.status === "active") {
+      req.user = user;
+      req.token = token;
+    }
+  } catch {
+    // Invalid/expired token on an optional-auth route — proceed unauthenticated.
+  }
+  next();
+});
+
 const adminOnly = requireRole("staff", "admin", "super_admin");
 const superAdminOnly = requireRole("super_admin");
 
-module.exports = { protect, requireRole, adminOnly, superAdminOnly };
+module.exports = { protect, optionalAuth, requireRole, adminOnly, superAdminOnly };

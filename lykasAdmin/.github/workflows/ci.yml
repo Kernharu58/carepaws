@@ -1,0 +1,44 @@
+name: lykasAdmin CI
+
+on:
+  pull_request:
+    paths:
+      - "lykasAdmin/**"
+  push:
+    branches: [main, develop, staging]
+    paths:
+      - "lykasAdmin/**"
+
+defaults:
+  run:
+    working-directory: lykasAdmin
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: lykasAdmin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check + build
+        run: npm run build
+        env:
+          VITE_API_URL: https://staging-api.example.com
+          VITE_GOOGLE_CLIENT_ID: placeholder
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Audit dependencies (fail on new high/critical vulnerabilities)
+        run: npm audit --audit-level=high

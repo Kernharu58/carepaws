@@ -1,25 +1,21 @@
 const cron = require("node-cron");
 const { logger } = require("./utils/logger");
-const { purgeExpiredSessions } = require("./jobs/reminderJobs");
+const { runJob } = require("./jobs/reminderJobs");
 
 /**
- * Wires all scheduled jobs. Each job is logged on start/finish — once the
- * System & Admin Ops domain lands (ScheduledJobLog model), this should
- * persist that log to the database too so ops can audit job health from
- * the admin panel, not just from process logs.
+ * Wires all scheduled jobs from the JOB_REGISTRY in reminderJobs.js. Every
+ * run — cron-triggered or manually triggered from the admin panel — goes
+ * through the same runJob() wrapper, so ScheduledJobLog is always the
+ * single source of truth for job health, not just process logs.
  */
 function startCronJobs() {
   // Daily at 03:00 — low-traffic window.
   cron.schedule("0 3 * * *", async () => {
-    const startedAt = Date.now();
     try {
-      const { itemsProcessed } = await purgeExpiredSessions();
-      logger.info(
-        { job: "purgeExpiredSessions", durationMs: Date.now() - startedAt, itemsProcessed },
-        "Scheduled job completed"
-      );
+      const log = await runJob("purgeExpiredSessions", { triggeredBy: "cron" });
+      logger.info({ jobKey: "purgeExpiredSessions", status: log.status, itemsProcessed: log.itemsProcessed }, "Scheduled job completed");
     } catch (err) {
-      logger.error({ err, job: "purgeExpiredSessions" }, "Scheduled job failed");
+      logger.error({ err, jobKey: "purgeExpiredSessions" }, "Scheduled job runner itself failed");
     }
   });
 

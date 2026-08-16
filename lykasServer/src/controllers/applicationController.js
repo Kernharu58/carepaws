@@ -3,6 +3,7 @@ const Interview = require("../models/Interview");
 const HomeVisit = require("../models/HomeVisit");
 const RiskAssessment = require("../models/RiskAssessment");
 const Pet = require("../models/Pet");
+const User = require("../models/User");
 const { AppError, asyncHandler } = require("../utils/AppError");
 const { buildListQuery, buildPagination, paginationParams } = require("../utils/queryBuilder");
 const { logAudit } = require("../utils/auditLogger");
@@ -44,16 +45,26 @@ const createApplication = asyncHandler(async (req, res) => {
     throw new AppError(`This pet is not currently available (status: ${pet.status})`, 400);
   }
 
+  // Staff recording a walk-in application can specify who the actual
+  // applicant is; a regular user can only ever apply as themselves,
+  // regardless of what (if anything) they send in `applicant`.
+  const applicantId = isStaff(req.user) && req.body.applicant ? req.body.applicant : req.user._id;
+  if (isStaff(req.user) && req.body.applicant) {
+    const applicantUser = await User.findOne({ _id: req.body.applicant, isDeleted: false });
+    if (!applicantUser) throw new AppError("Applicant not found", 404);
+  }
+
   const existing = await Application.findOne({
     pet: pet._id,
-    applicant: req.user._id,
+    applicant: applicantId,
     status: "pending",
   });
-  if (existing) throw new AppError("You already have a pending application for this pet", 400);
+  if (existing) throw new AppError("This applicant already has a pending application for this pet", 400);
 
+  const { applicant: _ignored, ...rest } = req.body;
   const application = await Application.create({
-    ...req.body,
-    applicant: req.user._id,
+    ...rest,
+    applicant: applicantId,
     stageHistory: [{ stage: "submitted", changedBy: req.user._id, changedAt: new Date() }],
   });
 
