@@ -38,4 +38,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "New Application", path: "/applications/new" },
     ],
   },
+  {
+    label: "People & Access",
+    items: [{ label: "Manage Accounts", path: "/accounts", roles: ["admin", "super_admin"] }],
+  },
 ];

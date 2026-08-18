@@ -13,6 +13,7 @@ export interface AuthUser {
   profilePicture?: string;
   phone?: string;
   address?: string;
+  isDeleted?: boolean;
   createdAt: string;
 }
 

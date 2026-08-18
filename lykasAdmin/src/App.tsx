@@ -14,6 +14,7 @@ import { ManagePets } from "@/pages/ManagePets";
 import { PetManagement } from "@/pages/PetManagement";
 import { AdoptionForm } from "@/pages/AdoptionForm";
 import { Adoptions } from "@/pages/Adoptions";
+import { Accounts } from "@/pages/Accounts";
 
 /**
  * Only routes for pages that actually exist are wired here — every other
@@ -34,7 +35,7 @@ export default function App() {
 
             <Route
               element={
-                <ProtectedRoute>
+                <ProtectedRoute roles={["staff", "admin", "super_admin"]}>
                   <AppLayout />
                 </ProtectedRoute>
               }
@@ -77,6 +78,16 @@ export default function App() {
                   <ErrorBoundary>
                     <AdoptionForm />
                   </ErrorBoundary>
+                }
+              />
+              <Route
+                path="/accounts"
+                element={
+                  <ProtectedRoute roles={["admin", "super_admin"]}>
+                    <ErrorBoundary>
+                      <Accounts />
+                    </ErrorBoundary>
+                  </ProtectedRoute>
                 }
               />
             </Route>
